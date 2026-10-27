@@ -98,9 +98,10 @@ starlog_to_prolog(+Rule, -Clause)
 |-------------------------------------------------|-------------------------------|
 | `starlog_type_error(Op, Expected, Got)`         | Wrong argument type           |
 | `starlog_undefined_predicate(Name)`             | Rule not loaded               |
-| `starlog_arity_error(Name, expected(N), got(V))`| Wrong number of inputs        |
+| `starlog_arity_error(Name, expected(N), got(Actual))` | Wrong number of inputs |
 | `starlog_missing_output(Var)`                   | Output variable not produced  |
 | `starlog_malformed_rule(Term)`                  | Bad term in `.star` file      |
+| `starlog_missing_variable(Name)`                 | Compiler variable is undeclared and unproduced |
 
 ---
 
@@ -121,5 +122,6 @@ A Starlog program with explicit inputs and outputs can be loaded and executed.
 Nested Starlog expressions work.
 The `r` looping construct works for empty, singleton, and multi-element lists.
 Statement ordering is implemented and dependency-safe.
-A Starlog program can be translated into readable SWI-Prolog.
-All 33 plunit tests pass.
+A Starlog program can be translated into executable SWI-Prolog, including
+rules with intermediate assignment variables and `r` loops.
+Run the plunit suite with `swipl -g "run_tests" -t halt starlog_tests.pl`.

@@ -282,7 +282,8 @@ run_starlog(Name, InputValues, OutputValues) :-
     length(InputVars, NI),
     (   length(InputValues, NI)
     ->  true
-    ;   throw(error(starlog_arity_error(Name, expected(NI), got(InputValues)),
+    ;   length(InputValues, ActualArity),
+        throw(error(starlog_arity_error(Name, expected(NI), got(ActualArity)),
                     context(run_starlog/3, 'wrong number of inputs')))
     ),
     pairs_keys_values(InputPairs, InputVars, InputValues),
@@ -307,11 +308,17 @@ lookup_output(Env, Var, Val) :-
 %  Each Starlog atom variable name maps to a fresh, distinct Prolog variable.
 
 starlog_to_prolog(starlog_rule(Name, Inputs, Outputs, Body), Clause) :-
-    append(Inputs, Outputs, AllArgNames),
-    length(AllArgNames, NArgs),
-    length(AllArgVars, NArgs),          % creates NArgs fresh Prolog variables
-    pairs_keys_values(VarMap, AllArgNames, AllArgVars),
-    Head =.. [Name|AllArgVars],
+    collect_all_read_vars(Body, ReadNames),
+    collect_all_produced_vars(Body, ProducedNames),
+    append([Inputs, Outputs, ReadNames, ProducedNames], AllNames0),
+    list_to_set(AllNames0, AllNames),
+    length(AllNames, NVars),
+    length(AllVars, NVars),
+    pairs_keys_values(VarMap, AllNames, AllVars),
+    maplist(lookup_var(VarMap), Inputs, InputVars),
+    maplist(lookup_var(VarMap), Outputs, OutputVars),
+    append(InputVars, OutputVars, HeadVars),
+    Head =.. [Name|HeadVars],
     starlog_order_statements(Body, OrderedBody),
     maplist(translate_stmt(VarMap), OrderedBody, Goals0),
     flatten_goals(Goals0, Goals),
@@ -328,10 +335,11 @@ translate_stmt(VarMap, LHS = RHS, Goal) :-
     translate_expr(VarMap, RHS, LVar, Goal).
 translate_stmt(VarMap, r(ResultVar, ListExpr, GoalTerm), Goal) :-
     atom(ResultVar), !,
-    lookup_or_new_var(VarMap, ResultVar, RVar),
+    lookup_var(VarMap, ResultVar, RVar),
     fresh_pvar(LVar),
     translate_expr(VarMap, ListExpr, LVar, ListGoal),
-    Goal = (ListGoal, maplist(GoalTerm, LVar, RVar)).
+    subst_vars_in(VarMap, GoalTerm, MappedGoal),
+    Goal = (ListGoal, maplist(MappedGoal, LVar, RVar)).
 translate_stmt(VarMap, Stmt, Goal) :-
     subst_vars_in(VarMap, Stmt, Goal).
 
@@ -347,9 +355,12 @@ translate_expr(VarMap, A & B, Result, Goal) :-
 translate_expr(VarMap, A : B, Result, Goal) :-
     !,
     fresh_pvar(VA), fresh_pvar(VB),
+    fresh_pvar(SA), fresh_pvar(SB),
     translate_expr(VarMap, A, VA, GA),
     translate_expr(VarMap, B, VB, GB),
-    flatten_goals([GA, GB, string_concat(VA, VB, Result)], Gs),
+    string_value_goal(VA, SA, ConvertA),
+    string_value_goal(VB, SB, ConvertB),
+    flatten_goals([GA, GB, ConvertA, ConvertB, string_concat(SA, SB, Result)], Gs),
     goals_to_conjunction(Gs, Goal).
 translate_expr(VarMap, A ^ B, Result, Goal) :-
     !,
@@ -361,8 +372,11 @@ translate_expr(VarMap, A ^ B, Result, Goal) :-
 translate_expr(VarMap, Name, Result, (Result = Var)) :-
     atom(Name),
     member(Name-Var, VarMap), !.
+translate_expr(VarMap, Term, Result, (Result = SubTerm)) :-
+    compound(Term), !,
+    subst_vars_in(VarMap, Term, SubTerm).
 translate_expr(_VarMap, Lit, Result, (Result = Lit)) :-
-    ( number(Lit) ; string(Lit) ; Lit = [] ; is_list(Lit) ), !.
+    ( number(Lit) ; string(Lit) ), !.
 translate_expr(_VarMap, Atom, Result, (Result = Atom)) :-
     atom(Atom), !.
 translate_expr(_VarMap, X, Result, (Result = X)).
@@ -370,8 +384,19 @@ translate_expr(_VarMap, X, Result, (Result = X)).
 lookup_or_new_var(VarMap, Name, Var) :-
     (   member(Name-Var, VarMap)
     ->  true
-    ;   true          % Var remains a fresh uninstantiated Prolog variable
+    ;   throw(error(starlog_missing_variable(Name),
+                    context(starlog_to_prolog/2, 'variable is not declared or produced')))
     ).
+
+lookup_var(VarMap, Name, Var) :-
+    memberchk(Name-Var, VarMap).
+
+string_value_goal(Value, String, Goal) :-
+    Goal = (   string(Value)
+           ->  String = Value
+           ;   atom(Value),
+               atom_string(Value, String)
+           ).
 
 subst_vars_in(VarMap, Atom, Var) :-
     atom(Atom), member(Atom-Var, VarMap), !.

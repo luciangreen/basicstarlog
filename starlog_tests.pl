@@ -7,6 +7,10 @@
 :- use_module(starlog).
 :- use_module(library(plunit)).
 
+:- dynamic starlog:compile_multi_test/4.
+:- dynamic starlog:compile_loop_test/2.
+:- dynamic starlog:compile_string_test/3.
+
 /* ------------------------------------------------------------------ *
  *  1.  starlog_eval/2 — operator evaluation                          *
  * ------------------------------------------------------------------ */
@@ -150,6 +154,10 @@ test(undefined_rule,
         [throws(error(starlog_undefined_predicate(no_such_rule), _))]) :-
     run_starlog(no_such_rule, [], _).
 
+test(wrong_input_arity,
+        [throws(error(starlog_arity_error(combine_words, expected(2), got(1)), _))]) :-
+    run_starlog(combine_words, ["Star"], _).
+
 :- end_tests(run_starlog).
 
 /* ------------------------------------------------------------------ *
@@ -196,10 +204,45 @@ test(translate_string_concat, [nondet]) :-
     starlog_to_prolog(Rule, Clause),
     Clause = (combine_str(_,_,_) :- _).
 
+test(translate_string_concat_accepts_atoms) :-
+    Rule = starlog_rule(compile_string_test, ['A','B'], ['C'],
+        ['C' = ('A' : 'B')]),
+    starlog_to_prolog(Rule, Clause),
+    setup_call_cleanup(
+        assertz(starlog:Clause, Ref),
+        starlog:compile_string_test(star, log, Result),
+        erase(Ref)),
+    Result = "starlog".
+
 test(translate_atom_concat, [nondet]) :-
     Rule = starlog_rule(combine_atoms, ['A','B'], ['C'], ['C' = ('A' ^ 'B')]),
     starlog_to_prolog(Rule, Clause),
     Clause = (combine_atoms(_,_,_) :- _).
+
+test(translate_intermediate_variables_executes) :-
+    Rule = starlog_rule(compile_multi_test, ['A','B','C'], ['Result'],
+        [
+            'Name' = ('A' : 'B'),
+            'Atom' = (star ^ log),
+            'Values' = (['Name'] & ['Atom','C']),
+            'Result' = 'Values'
+        ]),
+    starlog_to_prolog(Rule, Clause),
+    setup_call_cleanup(
+        assertz(starlog:Clause, Ref),
+        starlog:compile_multi_test("Star", "log", extra, Result),
+        erase(Ref)),
+    Result = ["Starlog", starlog, extra].
+
+test(translate_loop_executes) :-
+    Rule = starlog_rule(compile_loop_test, ['In'], ['Out'],
+        [r('Out', 'In', user:square)]),
+    starlog_to_prolog(Rule, Clause),
+    setup_call_cleanup(
+        assertz(starlog:Clause, Ref),
+        starlog:compile_loop_test([2,3,4], Out),
+        erase(Ref)),
+    Out = [4,9,16].
 
 :- end_tests(starlog_to_prolog).
 
