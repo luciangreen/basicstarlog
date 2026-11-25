@@ -294,3 +294,15 @@ test(make_result) :-
     Outputs = [["Starlog", starlog, extra]].
 
 :- end_tests(multi_operator).
+
+:- begin_tests(statement_cycles).
+
+% Statements that need each other's outputs are reported, not failed.
+test(cycle_is_reported, [throws(error(starlog_dependency_cycle(_, waiting_for(['B','C'])), _))]) :-
+    starlog_order_statements(['C' = ('B' : "!"), 'B' = ('C' : 'A')], _).
+
+test(out_of_order_statements_are_ordered) :-
+    starlog_order_statements(['C' = ('B' : "!"), 'B' = ('A' : 'A')], Ordered),
+    Ordered == ['B' = ('A' : 'A'), 'C' = ('B' : "!")].
+
+:- end_tests(statement_cycles).
