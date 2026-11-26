@@ -109,6 +109,15 @@ order_stmts(Stmts, Avail, [Next|Rest]) :-
     stmt_produces(Next, Produced),
     append(Avail, Produced, NewAvail),
     order_stmts(Remaining, NewAvail, Rest).
+% No statement is ready: the rest need each other's outputs (a cycle). Say
+% so, naming the statements and the variables they wait for, rather than
+% failing as if the rule's answer were no.
+order_stmts(Stmts, Avail, _) :-
+    Stmts \= [],
+    findall(V, ( member(S, Stmts), stmt_requires(S, Req), member(V, Req), \+ memberchk(V, Avail) ), Vs0),
+    sort(Vs0, Waiting),
+    throw(error(starlog_dependency_cycle(Stmts, waiting_for(Waiting)),
+                context(starlog_order_statements/2, 'statements need each other\'s outputs'))).
 
 %  select_ready(+Stmts, +Avail, -Chosen, -Others)
 %  Choose the first statement whose required atom-variables are available.
